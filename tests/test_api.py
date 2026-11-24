@@ -590,6 +590,98 @@ class TestInvalid(util.TestCase):
         with self.assertRaises(TypeError):
             sv.filter('div', "not a tag", flags=flags)
 
+    def test_excessive_selectors(self):
+        """Test excessive selectors."""
+
+        # Build a 500 KB selector string: "a,a,a,...,a" (250,000 items)
+        count = 10000
+        selector = ",".join("a" for _ in range(count))
+
+        # Compile the selector
+        with self.assertRaises(ValueError):
+            sv.compile(selector)
+
+    def test_excessive_group_selectors(self):
+        """Test excessive selectors in `:is()` and `:where()`."""
+
+        count = 10000
+        selector = ':is({})'.format("," * count)
+
+        # Compile the selector
+        with self.assertRaises(ValueError):
+            sv.compile(selector)
+
+        selector = ':where({})'.format("," * count)
+
+        # Compile the selector
+        with self.assertRaises(ValueError):
+            sv.compile(selector)
+
+    def test_excessive_custom_selectors(self):
+        """Test excessive custom selectors."""
+
+        # Build a 500 KB selector string: "a,a,a,...,a" (250,000 items)
+        count = 10000
+        selector = ",".join("a" for _ in range(count))
+
+        # Compile the selector
+        with self.assertRaises(ValueError):
+            sv.compile('div:--custom', custom={':--custom': selector})
+
+    def test_excessive_custom_and_normal_selectors(self):
+        """Test excessive custom and normal selectors."""
+
+        count = 5000
+        selector = ",".join("a" for _ in range(count))
+
+        # Compile the selector
+        with self.assertRaises(ValueError):
+            sv.compile(':is({}):--custom'.format(selector), custom={':--custom': selector})
+
+    def test_excessive_nested_custom_selectors(self):
+        """Test custom selectors that double in size at each level of nesting are limited."""
+
+        custom = {':--level0': 'a'}
+        for level in range(1, 16):
+            custom[':--level{}'.format(level)] = ':--level{0}:--level{0}'.format(level - 1)
+
+        # Compile the selector
+        with self.assertRaises(ValueError):
+            sv.compile('div:--level15', custom=custom)
+
+    def test_excessive_pseudo_class_expansion(self):
+        """Test pseudo-classes that expand to internal selector lists count toward the limit."""
+
+        # Each `:read-only` is a single token, but expands to a large internal selector list.
+        selector = 'input' + ':read-only' * 1000
+
+        # Compile the selector
+        with self.assertRaises(ValueError):
+            sv.compile(selector)
+
+    def test_excessive_empty_has_slots(self):
+        """Test empty comma slots in `:has()` are rejected instead of compiled without limit."""
+
+        count = 10000
+        selector = 'div:has({}a)'.format("," * count)
+
+        # Compile the selector
+        with self.assertRaises(sv.SelectorSyntaxError):
+            sv.compile(selector)
+
+    def test_selectors_within_limit(self):
+        """Test that large selectors within the limit still compile."""
+
+        count = 4000
+        selector = ",".join("a" for _ in range(count))
+
+        self.assertEqual(len(sv.compile(selector).selectors), count)
+        self.assertEqual(len(sv.compile(':is({})'.format("," * count)).selectors), 1)
+        self.assertEqual(
+            len(sv.compile('div:--custom', custom={':--custom': selector}).selectors),
+            1
+        )
+
 
 class TestSyntaxErrorReporting(util.TestCase):
     """Test reporting of syntax errors."""
